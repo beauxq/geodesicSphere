@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <cstring>
 
 namespace gs {
     const size_t ORIGINAL_VERTEX_COUNT = 12;
@@ -183,25 +184,132 @@ namespace gs {
         // TODO: consolidate duplicate vertices
     }
 
-    void create_stl(const std::string& filename, const VertexList& vertices, const TriangleList& triangles) {
+    Vertex calculate_facet_normal(const Triangle& triangle, const VertexList& vertices) {
+        // https://math.stackexchange.com/questions/305642/how-to-find-surface-normal-of-a-triangle/
+        Vertex v = vertices[triangle[1]] - vertices[triangle[0]];
+        Vertex w = vertices[triangle[2]] - vertices[triangle[0]];
+        return {
+            (v[1] * w[2]) - (v[2] * w[1]),
+            (v[2] * w[0]) - (v[0] * w[2]),
+            (v[0] * w[1]) - (v[1] * w[0])
+        };
+    }
+
+    double get_translator(bool allow_negative_coordinates, const VertexList& vertices) {
+        return (int)(! allow_negative_coordinates) * distance_between_2_vertices(vertices[0], {0, 0, 0});
+    }
+
+    bool ends_with_case_insensitive(const std::string& original, const std::string& ending)
+    {
+        if (ending.size() > original.size()) return false;
+        auto original_ending_it = original.rbegin();
+        for (auto ending_it = ending.rbegin(); ending_it != ending.rend(); ++ending_it) {
+            if (tolower(*original_ending_it) != tolower(*ending_it)) {
+                return false;
+            }
+            ++original_ending_it;
+        }
+        return true;
+    }
+
+    std::string confirm_valid_filename(const std::string& filename, const std::string& extension_without_dot) {
+        if (filename.empty()) {
+            return "untitled." + extension_without_dot;
+        }
+        if (filename.size() < extension_without_dot.size() + 2 ||
+            filename[filename.size() - (extension_without_dot.size() + 1)] != '.' ||
+            (! ends_with_case_insensitive(filename, extension_without_dot)))
+        {
+            return filename + '.' + extension_without_dot;
+        }
+        return filename;
+    }
+
+    void create_ascii_stl(std::string filename,
+                          const VertexList& vertices,
+                          const TriangleList& triangles,
+                          bool allow_negative_coordinates = false)
+    {
+        // verify filename ends with .stl
+        filename = confirm_valid_filename(filename, "stl");
+
+        // in case we need to translate coordinates
+        double translator = get_translator(allow_negative_coordinates, vertices);
+
         std::ofstream file_out(filename);
 
         if (! file_out)
-            return;
+            exit(1);
 
         file_out << "solid geodesic_sphere\n";
 
         for (auto triangleI = triangles.begin(); triangleI != triangles.end(); ++triangleI) {
-            file_out << "  facet normal 0 0 0\n    outer loop\n";
+
+            Vertex n = calculate_facet_normal(*triangleI, vertices);
+
+            file_out << "  facet normal " << n[0] << ' ' << n[1] << ' ' << n[2] << "\n    outer loop\n";
             for (auto indexI = triangleI->begin(); indexI != triangleI->end(); ++indexI) {
-                file_out << "      vertex " << vertices[*indexI][0] << ' ' <<
-                                               vertices[*indexI][1] << ' ' <<
-                                               vertices[*indexI][2] << '\n';
+                file_out << "      vertex " << vertices[*indexI][0] + translator << ' ' <<
+                                               vertices[*indexI][1] + translator << ' ' <<
+                                               vertices[*indexI][2] + translator << '\n';
             }
             file_out << "    endloop\n  endfacet\n";
         }
 
         file_out << "endsolid geodesic_sphere\n";
+    }
+
+    // http://stackoverflow.com/questions/33134811/writing-binary-stl-files-in-c
+    void create_binary_stl(std::string filename,
+                           const VertexList& vertices,
+                           const TriangleList& triangles,
+                           bool allow_negative_coordinates = false)
+    {
+        // verify filename ends with .stl
+        filename = confirm_valid_filename(filename, "stl");
+
+        // in case we need to translate coordinates
+        float translator = (float)get_translator(allow_negative_coordinates, vertices);
+
+        char head[80];
+        std::strncpy(head, filename.c_str(), sizeof(head) - 1);
+        char attribute[2] = {0, 0};
+        uint32_t triangle_count = (uint32_t) triangles.size();
+
+        std::ofstream file_out;
+
+        file_out.open(filename, std::ios::out | std::ios::binary);
+
+        if (!file_out)
+            exit(1);
+
+        file_out.write(head, sizeof(head));
+        file_out.write((char *) &triangle_count, 4);
+
+        // write down every triangle
+        for (auto triangleI = triangles.begin(); triangleI != triangles.end(); ++triangleI) {
+            //normal vector coordinates
+            Vertex n = calculate_facet_normal(*triangleI, vertices);
+            float x = (float) n[0];
+            float y = (float) n[1];
+            float z = (float) n[2];
+
+            file_out.write((char *) &x, 4);
+            file_out.write((char *) &y, 4);
+            file_out.write((char *) &z, 4);
+
+            for (auto indexI = triangleI->begin(); indexI != triangleI->end(); ++indexI) {
+                x = (float)vertices[*indexI][0] + translator;
+                y = (float)vertices[*indexI][1] + translator;
+                z = (float)vertices[*indexI][2] + translator;
+
+                file_out.write((char *) &x, 4);
+                file_out.write((char *) &y, 4);
+                file_out.write((char *) &z, 4);
+            }
+
+            file_out.write(attribute, 2);
+        }
     }
 };
 
