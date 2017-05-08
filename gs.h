@@ -106,62 +106,73 @@ namespace gs {
             {10, 6, 11}
     };
 
-    void geodesic_sphere(VertexList& new_vertices, TriangleList& new_triangles, const double& radius = 1, const unsigned int& resolution = 4) {
-        new_vertices.clear();
-        new_triangles.clear();
+    void geodesic_sphere(VertexList& output_vertices,
+                         TriangleList& output_triangles,
+                         const double& radius = 1,
+                         const unsigned int& resolution = 4)
+    {
+        output_vertices.clear();
+        output_triangles.clear();
 
         for (auto triangleI = ORIGINAL_TRIANGLES.begin(); triangleI != ORIGINAL_TRIANGLES.end(); ++triangleI) {
             // assuming this orientation
             //   0
             //  / \
             // 1---2
+
+            // direction of horizontal lines
             Vertex dir_of_hor_lines = (ORIGINAL_VERTICES[triangleI->at(2)] -
                                        ORIGINAL_VERTICES[triangleI->at(1)]) / resolution;
 
+            // direction of the line from 0 to 1
             Vertex dir_of_0_1 = (ORIGINAL_VERTICES[triangleI->at(1)] -
                                  ORIGINAL_VERTICES[triangleI->at(0)]) / resolution;
 
             Vertex starting_point = ORIGINAL_VERTICES[triangleI->at(0)];
-            new_vertices.push_back(starting_point);
+            output_vertices.push_back(starting_point);
+
+            // for each horizontal line
             for (int i = 1; i <= resolution; ++i) {
                 starting_point += dir_of_0_1;
-                new_vertices.push_back(starting_point);
+                output_vertices.push_back(starting_point);
 
-                // now go over on the horizontal line
+                // now move right along the horizontal line
                 Vertex moving_hor_point = starting_point;
                 for (int j = 1; j <= i; ++j) {
                     moving_hor_point += dir_of_hor_lines;
-                    new_vertices.push_back(moving_hor_point);
+                    output_vertices.push_back(moving_hor_point);
 
                     // every time I move over on this horizontal line
                     // I've completed 2 new triangles if not on the last j
                     // 1 new triangle on the last j
-                    size_t li = new_vertices.size() - 1;  // last index
+                    size_t li = output_vertices.size() - 1;  // last index
                     // the triangle finished every time
-                    new_triangles.push_back({li-1, li, li-(1+i)});  // clockwise
+                    output_triangles.push_back({li-1, li, li-(1+i)});  // counter-clockwise
                     // the triangle finished if not on the last j
                     if (j != i) {
-                        new_triangles.push_back({li, li-i, li-(i+1)});  // clockwise
+                        output_triangles.push_back({li, li-i, li-(i+1)});  // counter-clockwise
                     }
                 }  // done moving over on horizontal line
             }  // done with all horizontal lines
         }  // done with all triangles
 
         // push out all new vertices to radius from origin
-        for (auto vertexI = new_vertices.begin(); vertexI != new_vertices.end(); ++vertexI) {
+        for (auto vertexI = output_vertices.begin(); vertexI != output_vertices.end(); ++vertexI) {
             double mag_of_this_vector = sqrt(vertexI->at(0) * vertexI->at(0) +
                                              vertexI->at(1) * vertexI->at(1) +
                                              vertexI->at(2) * vertexI->at(2));
             *vertexI = *vertexI * (radius / mag_of_this_vector);
         }
 
+        // to make sure there are no cracks between triangles
         // make sure close vertices are equal
+        // (floating point arithmetic might have made them unequal)
         // threshold is 1/3 of distance between first two vertices
-        double threshold = distance_between_2_vertices(new_vertices[0], new_vertices[1]) / 3.0;
-        for (auto vertexI = new_vertices.begin(); vertexI != new_vertices.end(); ++vertexI) {
+        double threshold = distance_between_2_vertices(output_vertices[0], output_vertices[1]) / 3.0;
+        for (auto vertexI = output_vertices.begin(); vertexI != output_vertices.end(); ++vertexI) {
             auto vertexJ = vertexI;
             ++vertexJ;
-            while (vertexJ != new_vertices.end()) {
+            while (vertexJ != output_vertices.end()) {
                 if (distance_between_2_vertices(*vertexI, *vertexJ) < threshold) {
                     *vertexJ = *vertexI;
                 }
